@@ -1,0 +1,31 @@
+[Unit]
+Description=code-dashboard — tmuxy session manager
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/code-dashboard-deploy/.next/standalone
+EnvironmentFile=%h/code-dashboard-deploy/.env.production
+Environment=NODE_ENV=production
+Environment=PORT=8101
+Environment=HOSTNAME=0.0.0.0
+ExecStart=/usr/bin/node server.js
+Restart=on-failure
+RestartSec=3
+
+# Hardening
+NoNewPrivileges=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+RestrictRealtime=yes
+RestrictNamespaces=yes
+LockPersonality=yes
+RestrictSUIDSGID=yes
+SystemCallArchitectures=native
+ProtectHostname=yes
+ProtectClock=yes
+
+[Install]
+WantedBy=default.target

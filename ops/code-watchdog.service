@@ -1,0 +1,8 @@
+[Unit]
+Description=code-watchdog — auto-resume dropped Claude sessions
+After=default.target
+
+[Service]
+Type=oneshot
+ExecStart=%h/bin/code-watchdog.sh
+StandardOutput=journal

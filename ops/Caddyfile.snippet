@@ -1,0 +1,10 @@
+# Example reverse-proxy block for Caddy. Drop into your /etc/caddy/Caddyfile
+# inside an existing wildcard cert host, or as a standalone host block.
+
+code.example.com {
+    reverse_proxy 127.0.0.1:8101 {
+        header_up X-Forwarded-Proto https
+        header_up X-Forwarded-Host {host}
+        header_up X-Real-IP {remote_host}
+    }
+}
