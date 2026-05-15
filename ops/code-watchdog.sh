@@ -50,6 +50,21 @@ for s in $(tmux list-sessions -F '#{session_name}' 2>/dev/null); do
   CURRENT_CMD[$s]="$cmd"
 done
 
+
+# After launching claude in a pane, wait for boot then verify remote-control came up.
+# If we see "Remote Control failed" in the pane buffer, send /remote-control as a retry.
+# Idempotent: only sends the slash command when failure is detected.
+verify_remote_control() {
+  local target="$1"
+  sleep 10
+  local buf
+  buf=$(tmux capture-pane -t "$target" -p -S -50 2>/dev/null)
+  if printf '%s' "$buf" | grep -qE "Remote Control failed|Session creation failed"; then
+    log "RC: retrying remote-control on $target via slash command"
+    tmux send-keys -t "$target" "/remote-control" Enter
+  fi
+}
+
 # === heal A: dropped-to-shell within existing session ===
 revived_inplace=0
 for s in "${!CURRENT_CMD[@]}"; do
@@ -63,6 +78,7 @@ for s in "${!CURRENT_CMD[@]}"; do
     tmux respawn-pane -k -t "${s}:" 2>/dev/null
     sleep 0.4
     tmux send-keys -t "${s}:" "claude --remote-control --name '[${s}]' --continue" Enter
+    ( verify_remote_control "${s}:" & ) >/dev/null 2>&1
     revived_inplace=$((revived_inplace+1))
   fi
 done
@@ -94,6 +110,7 @@ if [ -f "$STATE_FILE" ]; then
     tmux new-session -d -s "$name" -c "$cwd"
     sleep 0.4
     tmux send-keys -t "${name}:" "claude --remote-control --name '[${name}]' --continue" Enter
+    ( verify_remote_control "${name}:" & ) >/dev/null 2>&1
     revived_recreated=$((revived_recreated+1))
   done < "$STATE_FILE"
 fi
