@@ -120,6 +120,33 @@ if [ -f "$STATE_FILE" ]; then
   done < "$STATE_FILE"
 fi
 
+# === heal C: remote-control died but claude is still running ===
+# For each session where claude is alive, check the current view for the positive
+# "Remote Control active" signal. If missing, send /remote-control + Enter to
+# bring it back via the slash command. Catches the post-bulk-recreate race AND
+# any later RC drop (network blip, etc.) without disturbing healthy sessions.
+revived_rc=0
+for s in "${!CURRENT_CMD[@]}"; do
+  if is_skipped "$s"; then continue; fi
+  if ! valid_name "$s"; then continue; fi
+  cmd="${CURRENT_CMD[$s]}"
+  # Only heal if claude is actually running (not a shell-dropped pane, those are
+  # handled by heal A above which will re-launch claude with --remote-control).
+  claude_running=0
+  for h in $HEALTHY_CMDS; do [[ "$cmd" == "$h" ]] && claude_running=1; done
+  [ "$claude_running" = "1" ] || continue
+  # Capture wider window (terminal width varies in tmux capture-pane default)
+  buf=$(tmux capture-pane -t "${s}:" -p 2>/dev/null | tail -10)
+  if printf '%s' "$buf" | grep -q "Remote Control active"; then
+    continue
+  fi
+  log "C: re-activating remote-control on $s via slash command"
+  tmux send-keys -t "${s}:" "/remote-control" Enter
+  sleep 1
+  tmux send-keys -t "${s}:" Enter
+  revived_rc=$((revived_rc+1))
+done
+
 # === write new state snapshot ===
 # Includes:
 #   1. All current tmux sessions (healthy + dropped — they exist now).
@@ -154,5 +181,5 @@ mv "$STATE_FILE.tmp" "$STATE_FILE"
 
 total_now=${#CURRENT_CWD[@]}
 total_state=$(wc -l < "$STATE_FILE" 2>/dev/null || echo 0)
-log "checked $total_now sessions, revived $revived_inplace in-place, recreated $revived_recreated. state=$total_state"
+log "checked $total_now sessions, revived $revived_inplace in-place, recreated $revived_recreated, rc-healed $revived_rc. state=$total_state"
 exit 0
