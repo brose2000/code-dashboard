@@ -56,13 +56,18 @@ done
 # Idempotent: only sends the slash command when failure is detected.
 verify_remote_control() {
   local target="$1"
-  sleep 10
+  sleep 12
+  # Check only the currently-visible footer for the positive signal.
+  # The scrollback may contain stale "Remote Control failed" messages.
   local buf
-  buf=$(tmux capture-pane -t "$target" -p -S -50 2>/dev/null)
-  if printf '%s' "$buf" | grep -qE "Remote Control failed|Session creation failed"; then
-    log "RC: retrying remote-control on $target via slash command"
-    tmux send-keys -t "$target" "/remote-control" Enter
+  buf=$(tmux capture-pane -t "$target" -p 2>/dev/null | tail -10)
+  if printf '%s' "$buf" | grep -q "Remote Control active"; then
+    return 0
   fi
+  log "RC: bringing remote-control up on $target via slash command"
+  tmux send-keys -t "$target" "/remote-control" Enter
+  sleep 1
+  tmux send-keys -t "$target" Enter
 }
 
 # === heal A: dropped-to-shell within existing session ===
