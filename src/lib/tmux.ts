@@ -1,8 +1,8 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync, rmSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 
 const exec = promisify(execFile);
 const TMUX_TIMEOUT_MS = 5000;
@@ -14,12 +14,12 @@ export type Session = {
   windows: number;
   claudeRunning: boolean;
   cwd: string | null;
-  subroot: "personal" | "work" | null;
+  subroot: "personal" | "runspace" | null;
 };
 
-export type Subroot = "personal" | "work";
+export type Subroot = "personal" | "runspace";
 
-const SUBROOTS: Subroot[] = ["personal", "work"];
+const SUBROOTS: Subroot[] = ["personal", "runspace"];
 
 function detectSubroot(cwd: string | null): Subroot | null {
   if (!cwd) return null;
@@ -148,7 +148,7 @@ export async function listSessions(): Promise<Session[]> {
       subroot: detectSubroot(cwd),
     });
   }
-  sessions.sort((a, b) => a.name.localeCompare(b.name));
+  sessions.sort((a, b) => b.created - a.created);
   return sessions;
 }
 
@@ -164,7 +164,7 @@ export function validateName(name: string): string | null {
 
 export function folderForSession(name: string, subroot: Subroot): string {
   if (validateName(name)) throw new Error("invalid name");
-  if (subroot !== "personal" && subroot !== "work") throw new Error("invalid subroot");
+  if (subroot !== "personal" && subroot !== "runspace") throw new Error("invalid subroot");
   return join(homedir(), "claude-code", subroot, name);
 }
 
@@ -266,10 +266,59 @@ export async function resetSession(name: string, mode: ResetMode = "resume"): Pr
   }
 }
 
-export async function deleteSession(name: string): Promise<void> {
+export async function deleteSession(name: string, deleteFolder = false): Promise<void> {
   if (validateName(name)) throw new Error("invalid name");
-  if (!(await sessionExists(name))) return;
-  await tmux(["kill-session", "-t", `=${name}`]);
+
+  let cwd: string | null = null;
+  if (deleteFolder && (await sessionExists(name))) {
+    try {
+      const out = await tmux([
+        "list-panes",
+        "-t",
+        `=${name}`,
+        "-F",
+        "#{pane_current_path}",
+      ]);
+      cwd = out.trim().split("\n")[0] || null;
+    } catch {
+      // ignore — we'll just skip folder removal if we can't resolve cwd
+    }
+  }
+
+  if (await sessionExists(name)) {
+    await tmux(["kill-session", "-t", `=${name}`]);
+  }
+
+  if (deleteFolder && cwd) {
+    removeSessionFolder(cwd);
+  }
+}
+
+/** Safely remove a session's working directory.
+ * Only deletes if the path resolves inside ~/claude-code/{personal,runspace}/<name>/,
+ * exactly one level below a known subroot — never the subroot itself, never outside. */
+function removeSessionFolder(cwd: string): void {
+  const home = homedir();
+  const allowedRoots = SUBROOTS.map((r) => resolve(join(home, "claude-code", r)));
+
+  let target: string;
+  try {
+    target = realpathSync(cwd);
+  } catch {
+    return; // cwd vanished — nothing to do
+  }
+
+  const matchingRoot = allowedRoots.find((root) => {
+    if (!target.startsWith(root + "/")) return false;
+    const rel = target.slice(root.length + 1);
+    return rel.length > 0 && !rel.includes("/");
+  });
+
+  if (!matchingRoot) {
+    throw new Error(`refusing to delete folder outside known subroots: ${target}`);
+  }
+
+  rmSync(target, { recursive: true, force: true });
 }
 
 export async function detachSession(name: string): Promise<void> {

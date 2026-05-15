@@ -15,9 +15,18 @@ export async function POST(req: Request, ctx: { params: Promise<{ name: string }
   const { name } = await ctx.params;
   const nameErr = validateName(name);
   if (nameErr) return NextResponse.json({ error: nameErr }, { status: 400 });
+
+  let deleteFolder = false;
   try {
-    await deleteSession(name);
-    console.log(`[audit] ${user.email} deleted session=${name}`);
+    const body = await req.json();
+    deleteFolder = !!body?.deleteFolder;
+  } catch {
+    // no body or invalid JSON — default deleteFolder=false
+  }
+
+  try {
+    await deleteSession(name, deleteFolder);
+    console.log(`[audit] ${user.email} deleted session=${name} deleteFolder=${deleteFolder}`);
     return NextResponse.json({ ok: true });
   } catch (e: any) {
     console.error(`[audit] ${user.email} delete-failed name=${name}: ${e.message}`);

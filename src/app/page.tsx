@@ -21,17 +21,14 @@ export default async function Home() {
 
   return (
     <main className="min-h-screen bg-neutral-950 text-neutral-100">
-      <div className="max-w-4xl mx-auto p-6 space-y-6">
-        <header className="flex items-center justify-between">
-          <div>
-            <h1 className="text-xl font-semibold">tmuxy sessions</h1>
-            
-          </div>
+      <div className="max-w-4xl mx-auto p-4 sm:p-6 space-y-4 sm:space-y-6">
+        <header className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <h1 className="text-xl font-semibold">tmuxy sessions</h1>
           <div className="flex items-center gap-3 text-sm">
-            <span className="text-neutral-400">{user.email}</span>
+            <span className="text-neutral-400 truncate">{user.email}</span>
             <a
               href="/api/auth/signout"
-              className="rounded border border-neutral-700 px-3 py-1 hover:bg-neutral-800"
+              className="rounded border border-neutral-700 px-3 py-1 hover:bg-neutral-800 whitespace-nowrap"
             >
               Sign out
             </a>

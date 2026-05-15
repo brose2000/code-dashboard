@@ -55,8 +55,8 @@ export async function POST(req: Request) {
   const subroot: Subroot = body.subroot;
   const createFolder: boolean = !!body.createFolder;
   
-  if (subroot !== "personal" && subroot !== "work") {
-    return NextResponse.json({ error: "subroot must be personal or work" }, { status: 400 });
+  if (subroot !== "personal" && subroot !== "runspace") {
+    return NextResponse.json({ error: "subroot must be personal or runspace" }, { status: 400 });
   }
   if (!folderExists(name, subroot) && !createFolder) {
     return NextResponse.json(

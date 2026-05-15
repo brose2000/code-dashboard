@@ -11,7 +11,7 @@ type Session = {
   windows: number;
   claudeRunning: boolean;
   cwd: string | null;
-  subroot: "personal" | "work" | null;
+  subroot: "personal" | "runspace" | null;
 };
 
 export default function SessionList({
@@ -26,6 +26,7 @@ export default function SessionList({
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showNewModal, setShowNewModal] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<{ name: string; cwd: string | null; subroot: "personal" | "runspace" | null } | null>(null);
 
   useEffect(() => {
     const id = setInterval(() => { refresh(); }, 10_000);
@@ -91,11 +92,17 @@ export default function SessionList({
       .finally(() => setBusy(null));
   }
 
-  function del(name: string) {
+  function del(name: string, cwd: string | null, subroot: "personal" | "runspace" | null) {
     if (busy) return;
-    if (!confirm(`Delete session "${name}"? This kills the entire tmux session (folder kept).`)) return;
+    setDeleteTarget({ name, cwd, subroot });
+  }
+
+  function confirmDelete(deleteFolder: boolean) {
+    if (!deleteTarget) return;
+    const { name } = deleteTarget;
+    setDeleteTarget(null);
     setBusy(name);
-    action(`/api/sessions/${encodeURIComponent(name)}/delete`)
+    action(`/api/sessions/${encodeURIComponent(name)}/delete`, { deleteFolder })
       .then(() => refresh())
       .catch((e) => setError(e.message))
       .finally(() => setBusy(null));
@@ -137,10 +144,10 @@ export default function SessionList({
           <div className="p-8 text-center text-neutral-500">No sessions.</div>
         )}
         {sessions.map((s) => (
-          <div key={s.name} className="flex items-center gap-3 p-4">
+          <div key={s.name} className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center">
             <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2">
-                <span className="font-mono text-sm">[{s.name}]</span>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="font-mono text-sm break-all">[{s.name}]</span>
                 {s.attached && (
                   <span className="text-xs rounded bg-green-900/40 text-green-300 px-1.5 py-0.5">
                     attached
@@ -165,7 +172,7 @@ export default function SessionList({
                 </div>
               )}
             </div>
-            <div className="flex gap-2 text-sm">
+            <div className="flex flex-wrap gap-2 text-sm sm:flex-nowrap sm:justify-end">
               <button
                 onClick={() => open(s.name)}
                 className="rounded border border-neutral-700 px-3 py-1 hover:bg-neutral-800"
@@ -199,9 +206,10 @@ export default function SessionList({
                 {busy === s.name ? "…" : "reset"}
               </button>
               <button
-                onClick={() => del(s.name)}
+                onClick={() => del(s.name, s.cwd, s.subroot)}
                 disabled={!!busy}
-                className="rounded border border-red-900/60 text-red-300 px-3 py-1 hover:bg-red-950/40 disabled:opacity-50"
+                className="rounded border border-red-900/60 text-red-300 px-3 py-1 hover:bg-red-950/40 disabled:opacity-50 ml-auto sm:ml-0"
+                aria-label="Delete session"
               >
                 ×
               </button>
@@ -223,6 +231,99 @@ export default function SessionList({
           onError={setError}
         />
       )}
+
+      {deleteTarget && (
+        <DeleteSessionModal
+          target={deleteTarget}
+          onCancel={() => setDeleteTarget(null)}
+          onConfirm={confirmDelete}
+        />
+      )}
+    </div>
+  );
+}
+
+function DeleteSessionModal({
+  target,
+  onCancel,
+  onConfirm,
+}: {
+  target: { name: string; cwd: string | null; subroot: "personal" | "runspace" | null };
+  onCancel: () => void;
+  onConfirm: (deleteFolder: boolean) => void;
+}) {
+  const [deleteFolder, setDeleteFolder] = useState(false);
+  const canDeleteFolder = !!(target.subroot && target.cwd);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onCancel();
+      else if (e.key === "Enter") onConfirm(deleteFolder);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [deleteFolder, onCancel, onConfirm]);
+
+  return (
+    <div
+      className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50"
+      onClick={onCancel}
+    >
+      <Card
+        className="w-full max-w-md p-6 space-y-4"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h2 className="text-lg font-semibold">Delete session</h2>
+
+        <div className="space-y-3 text-sm">
+          <p>
+            Kill the tmux session{" "}
+            <code className="font-mono bg-neutral-900 rounded px-1.5 py-0.5">
+              [{target.name}]
+            </code>
+            ?
+          </p>
+
+          {canDeleteFolder ? (
+            <label className="flex items-start gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={deleteFolder}
+                onChange={(e) => setDeleteFolder(e.target.checked)}
+                className="mt-1"
+              />
+              <span>
+                Also delete the project folder
+                <span className="block text-xs text-neutral-500 font-mono mt-0.5 break-all">
+                  {target.cwd}
+                </span>
+                <span className="block text-xs text-red-400 mt-1">
+                  Permanent — cannot be undone.
+                </span>
+              </span>
+            </label>
+          ) : (
+            <p className="text-xs text-neutral-500">
+              Folder will be kept (no subroot detected).
+            </p>
+          )}
+        </div>
+
+        <div className="flex justify-end gap-2 pt-2">
+          <button
+            onClick={onCancel}
+            className="rounded border border-neutral-700 px-3 py-1.5 text-sm hover:bg-neutral-800"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={() => onConfirm(deleteFolder)}
+            className="rounded border border-red-900/60 bg-red-950/40 text-red-300 px-3 py-1.5 text-sm hover:bg-red-950/70"
+          >
+            {deleteFolder ? "Delete session + folder" : "Delete session"}
+          </button>
+        </div>
+      </Card>
     </div>
   );
 }
@@ -238,7 +339,7 @@ function NewSessionModal({
 }) {
   const [name, setName] = useState("");
   const [mode, setMode] = useState<"new" | "existing">("new");
-  const [subroot, setSubroot] = useState<"personal" | "work">("personal");
+  const [subroot, setSubroot] = useState<"personal" | "runspace">("personal");
   const [createFolder, setCreateFolder] = useState(true);
   const [existingPath, setExistingPath] = useState("");
   const [trustDirectory, setTrustDirectory] = useState(true);
@@ -331,7 +432,7 @@ function NewSessionModal({
               <div>
                 <span className="text-sm text-neutral-400 block mb-1">Subroot</span>
                 <div className="flex gap-2">
-                  {(["personal", "work"] as const).map((r) => (
+                  {(["personal", "runspace"] as const).map((r) => (
                     <label
                       key={r}
                       className={`flex-1 rounded border px-3 py-2 text-sm cursor-pointer text-center ${
