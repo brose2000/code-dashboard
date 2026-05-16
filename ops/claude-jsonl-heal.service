@@ -1,0 +1,8 @@
+[Unit]
+Description=Heal Claude Code session JSONLs (remove empty text blocks)
+After=default.target
+
+[Service]
+Type=oneshot
+ExecStart=%h/bin/claude-jsonl-heal
+StandardOutput=journal
