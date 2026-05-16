@@ -2,8 +2,8 @@
 Description=Run claude-jsonl-heal hourly
 
 [Timer]
-OnBootSec=5min
-OnUnitActiveSec=1h
+OnBootSec=1min
+OnUnitActiveSec=2min
 AccuracySec=5min
 Persistent=true
 

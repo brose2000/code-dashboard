@@ -20,8 +20,14 @@ FILTER='if .message.content | type == "array"
 
 healed=0
 scanned=0
+MIN_QUIET_SECONDS=30
+NOW=$(date +%s)
+
 for jsonl in "$BASE"/*/*.jsonl; do
   [ -f "$jsonl" ] || continue
+  # Skip if claude may still be writing to this file
+  mtime=$(stat -c %Y "$jsonl" 2>/dev/null || echo 0)
+  if [ $((NOW - mtime)) -lt "$MIN_QUIET_SECONDS" ]; then continue; fi
   scanned=$((scanned+1))
   # Skip if no empty text blocks exist (cheap pre-filter)
   if ! jq -c 'select((.message.content | type == "array") and (.message.content | map(select(.type == "text" and ((.text // "") | test("\\S") | not))) | length > 0))' "$jsonl" 2>/dev/null | head -1 | grep -q .; then
