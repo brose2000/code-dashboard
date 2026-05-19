@@ -28,6 +28,7 @@ export async function POST(req: Request) {
   }
   const name: string = typeof body.name === "string" ? body.name.trim() : "";
   const trustDirectory: boolean = !!body.trustDirectory;
+  const launchClaude: boolean = body.launchClaude !== false; // default true
   const mode: "new" | "existing" = body.mode === "existing" ? "existing" : "new";
 
   const nameErr = validateName(name);
@@ -42,8 +43,8 @@ export async function POST(req: Request) {
     const v = validateExistingPath(path);
     if (!v.ok) return NextResponse.json({ error: v.error }, { status: 400 });
     try {
-      await createSession({ name, mode: "existing", path: v.resolved, trustDirectory });
-      console.log(`[audit] ${user.email} created session=${name} mode=existing path=${v.resolved}`);
+      await createSession({ name, mode: "existing", path: v.resolved, trustDirectory, launchClaude });
+      console.log(`[audit] ${user.email} created session=${name} mode=existing path=${v.resolved} launchClaude=${launchClaude}`);
       return NextResponse.json({ ok: true, name });
     } catch (e: any) {
       console.error(`[audit] ${user.email} create-failed name=${name}: ${e.message}`);
@@ -65,8 +66,8 @@ export async function POST(req: Request) {
     );
   }
   try {
-    await createSession({ name, mode: "new", subroot, createFolder, trustDirectory });
-    console.log(`[audit] ${user.email} created session=${name} subroot=${subroot} createFolder=${createFolder}`);
+    await createSession({ name, mode: "new", subroot, createFolder, trustDirectory, launchClaude });
+    console.log(`[audit] ${user.email} created session=${name} subroot=${subroot} createFolder=${createFolder} launchClaude=${launchClaude}`);
     return NextResponse.json({ ok: true, name });
   } catch (e: any) {
     console.error(`[audit] ${user.email} create-failed name=${name}: ${e.message}`);

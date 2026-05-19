@@ -183,8 +183,8 @@ export async function sessionExists(name: string): Promise<boolean> {
 }
 
 export type CreateSessionOpts =
-  | { name: string; mode: "new"; subroot: Subroot; createFolder: boolean; trustDirectory?: boolean }
-  | { name: string; mode: "existing"; path: string; trustDirectory?: boolean };
+  | { name: string; mode: "new"; subroot: Subroot; createFolder: boolean; trustDirectory?: boolean; launchClaude?: boolean }
+  | { name: string; mode: "existing"; path: string; trustDirectory?: boolean; launchClaude?: boolean };
 
 /** Validate an absolute path is safe to use: must be absolute, must exist as dir,
  *  and must be inside the user's home (no /etc, /var, etc). */
@@ -236,7 +236,12 @@ export async function createSession(opts: CreateSessionOpts): Promise<void> {
     }
   }
   await tmux(["new-session", "-d", "-s", name, "-c", folder]);
-  await tmux(["send-keys", "-t", `${name}:`, claudeLaunchCommand(name), "Enter"]);
+  if (opts.launchClaude === false) {
+    // Mark the session so code-watchdog won't auto-revive a Claude process in it.
+    await tmux(["set-environment", "-t", name, "NO_AUTO_CLAUDE", "1"]);
+  } else {
+    await tmux(["send-keys", "-t", `${name}:`, claudeLaunchCommand(name), "Enter"]);
+  }
 }
 
 export type ResetMode = "resume" | "fresh";

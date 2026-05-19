@@ -343,6 +343,7 @@ function NewSessionModal({
   const [createFolder, setCreateFolder] = useState(true);
   const [existingPath, setExistingPath] = useState("");
   const [trustDirectory, setTrustDirectory] = useState(true);
+  const [launchClaude, setLaunchClaude] = useState(true);
   const [submitting, setSubmitting] = useState(false);
 
   const trimmed = name.trim();
@@ -358,8 +359,8 @@ function NewSessionModal({
     try {
       const body =
         mode === "existing"
-          ? { name: trimmed, mode: "existing", path: trimmedPath, trustDirectory }
-          : { name: trimmed, mode: "new", subroot, createFolder, trustDirectory };
+          ? { name: trimmed, mode: "existing", path: trimmedPath, trustDirectory, launchClaude }
+          : { name: trimmed, mode: "new", subroot, createFolder, trustDirectory, launchClaude };
       const r = await fetch("/api/sessions/new", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -464,8 +465,17 @@ function NewSessionModal({
               <label className="flex items-center gap-2 text-sm">
                 <input
                   type="checkbox"
+                  checked={launchClaude}
+                  onChange={(e) => setLaunchClaude(e.target.checked)}
+                />
+                Start Claude automatically
+              </label>
+              <label className={`flex items-center gap-2 text-sm ${!launchClaude ? "opacity-50" : ""}`}>
+                <input
+                  type="checkbox"
                   checked={trustDirectory}
                   onChange={(e) => setTrustDirectory(e.target.checked)}
+                  disabled={!launchClaude}
                 />
                 Trust directory (skip Claude&apos;s trust dialog)
               </label>
@@ -493,8 +503,17 @@ function NewSessionModal({
               <label className="flex items-center gap-2 text-sm">
                 <input
                   type="checkbox"
+                  checked={launchClaude}
+                  onChange={(e) => setLaunchClaude(e.target.checked)}
+                />
+                Start Claude automatically
+              </label>
+              <label className={`flex items-center gap-2 text-sm ${!launchClaude ? "opacity-50" : ""}`}>
+                <input
+                  type="checkbox"
                   checked={trustDirectory}
                   onChange={(e) => setTrustDirectory(e.target.checked)}
+                  disabled={!launchClaude}
                 />
                 Trust directory (skip Claude&apos;s trust dialog)
               </label>
