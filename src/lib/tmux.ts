@@ -30,6 +30,31 @@ function detectSubroot(cwd: string | null): Subroot | null {
   return null;
 }
 
+// Persisted "first-seen" timestamp per session name. Survives reboots/watchdog
+// recreates, so sort order reflects the user's original creation order — not
+// the moment the watchdog respawned the session after a host restart.
+const BIRTHS_DIR = join(homedir(), ".local", "state", "code-dashboard");
+const BIRTHS_FILE = join(BIRTHS_DIR, "session-births.json");
+
+function loadBirths(): Record<string, number> {
+  try {
+    return JSON.parse(readFileSync(BIRTHS_FILE, "utf8"));
+  } catch {
+    return {};
+  }
+}
+
+function saveBirths(map: Record<string, number>): void {
+  try {
+    if (!existsSync(BIRTHS_DIR)) mkdirSync(BIRTHS_DIR, { recursive: true, mode: 0o755 });
+    const tmp = BIRTHS_FILE + ".tmp";
+    writeFileSync(tmp, JSON.stringify(map));
+    renameSync(tmp, BIRTHS_FILE);
+  } catch {
+    // non-fatal: sort just falls back to tmux session_created next call
+  }
+}
+
 async function tmux(args: string[]): Promise<string> {
   try {
     const { stdout } = await exec("tmux", args, {
@@ -150,8 +175,21 @@ export async function listSessions(): Promise<Session[]> {
       subroot: detectSubroot(cwd),
     });
   }
-  // Most-recently-active first; fall back to created for sessions with no activity yet
-  sessions.sort((a, b) => (b.activity || b.created) - (a.activity || a.created));
+  // Override `created` with the first time we saw each session name. New names
+  // get persisted on the spot; recreated names keep their original birth date.
+  const births = loadBirths();
+  let dirty = false;
+  for (const s of sessions) {
+    if (births[s.name]) {
+      s.created = births[s.name];
+    } else {
+      births[s.name] = s.created;
+      dirty = true;
+    }
+  }
+  if (dirty) saveBirths(births);
+  // Newest-first by original creation time.
+  sessions.sort((a, b) => b.created - a.created);
   return sessions;
 }
 
@@ -295,6 +333,14 @@ export async function deleteSession(name: string, deleteFolder = false): Promise
 
   if (await sessionExists(name)) {
     await tmux(["kill-session", "-t", `=${name}`]);
+  }
+
+  // Forget this session's birth time so a future session with the same name
+  // gets a fresh timestamp instead of inheriting the deleted one's slot.
+  const births = loadBirths();
+  if (births[name]) {
+    delete births[name];
+    saveBirths(births);
   }
 
   if (deleteFolder && cwd) {
