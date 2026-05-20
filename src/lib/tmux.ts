@@ -10,6 +10,7 @@ const TMUX_TIMEOUT_MS = 5000;
 export type Session = {
   name: string;
   created: number;
+  activity: number;
   attached: boolean;
   windows: number;
   claudeRunning: boolean;
@@ -104,7 +105,7 @@ export async function listSessions(): Promise<Session[]> {
     out = await tmux([
       "list-sessions",
       "-F",
-      "#{session_name}\t#{session_created}\t#{session_attached}\t#{session_windows}",
+      "#{session_name}\t#{session_created}\t#{session_attached}\t#{session_windows}\t#{session_activity}",
     ]);
   } catch (e: any) {
     // tmux server not running → treat as no sessions
@@ -113,7 +114,7 @@ export async function listSessions(): Promise<Session[]> {
   }
   const sessions: Session[] = [];
   for (const line of out.trim().split("\n").filter(Boolean)) {
-    const [name, created, attached, windows] = line.split("\t");
+    const [name, created, attached, windows, activity] = line.split("\t");
     if (!name) continue;
     if (name.startsWith("__")) continue;
     if (name.startsWith("tmuxy_")) continue;
@@ -141,6 +142,7 @@ export async function listSessions(): Promise<Session[]> {
     sessions.push({
       name,
       created: parseInt(created, 10) || 0,
+      activity: parseInt(activity, 10) || 0,
       attached: attached === "1",
       windows: parseInt(windows, 10) || 0,
       claudeRunning,
@@ -148,7 +150,8 @@ export async function listSessions(): Promise<Session[]> {
       subroot: detectSubroot(cwd),
     });
   }
-  sessions.sort((a, b) => b.created - a.created);
+  // Most-recently-active first; fall back to created for sessions with no activity yet
+  sessions.sort((a, b) => (b.activity || b.created) - (a.activity || a.created));
   return sessions;
 }
 

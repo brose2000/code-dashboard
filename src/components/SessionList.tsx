@@ -7,6 +7,7 @@ import { Card } from "@/components/ui/card";
 type Session = {
   name: string;
   created: number;
+  activity: number;
   attached: boolean;
   windows: number;
   claudeRunning: boolean;
