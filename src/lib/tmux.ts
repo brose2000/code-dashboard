@@ -33,8 +33,37 @@ function detectSubroot(cwd: string | null): Subroot | null {
 // Persisted "first-seen" timestamp per session name. Survives reboots/watchdog
 // recreates, so sort order reflects the user's original creation order — not
 // the moment the watchdog respawned the session after a host restart.
-const BIRTHS_DIR = join(homedir(), ".local", "state", "code-dashboard");
-const BIRTHS_FILE = join(BIRTHS_DIR, "session-births.json");
+const STATE_DIR = join(homedir(), ".local", "state", "code-dashboard");
+const BIRTHS_DIR = STATE_DIR;
+const BIRTHS_FILE = join(STATE_DIR, "session-births.json");
+// Persistent opt-out list for sessions created with launchClaude=false. The
+// tmux env var NO_AUTO_CLAUDE is per-session and dies on recreate; this file
+// outlives reboots so the watchdog still skips them.
+const NO_AUTO_CLAUDE_FILE = join(STATE_DIR, "no-auto-claude.txt");
+
+function readNoAutoClaudeSet(): Set<string> {
+  try {
+    return new Set(
+      readFileSync(NO_AUTO_CLAUDE_FILE, "utf8")
+        .split("\n")
+        .map((l) => l.trim())
+        .filter(Boolean),
+    );
+  } catch {
+    return new Set();
+  }
+}
+
+function writeNoAutoClaudeSet(set: Set<string>): void {
+  try {
+    if (!existsSync(STATE_DIR)) mkdirSync(STATE_DIR, { recursive: true, mode: 0o755 });
+    const tmp = NO_AUTO_CLAUDE_FILE + ".tmp";
+    writeFileSync(tmp, [...set].sort().join("\n") + (set.size ? "\n" : ""));
+    renameSync(tmp, NO_AUTO_CLAUDE_FILE);
+  } catch {
+    // non-fatal: watchdog will fall back to tmux env var lookup
+  }
+}
 
 function loadBirths(): Record<string, number> {
   try {
@@ -278,8 +307,13 @@ export async function createSession(opts: CreateSessionOpts): Promise<void> {
   }
   await tmux(["new-session", "-d", "-s", name, "-c", folder]);
   if (opts.launchClaude === false) {
-    // Mark the session so code-watchdog won't auto-revive a Claude process in it.
+    // Mark the session so code-watchdog won't auto-revive a Claude process.
+    // Both: tmux env (in-session signal) AND a persistent file (survives reboots
+    // because the env var dies when the session is destroyed).
     await tmux(["set-environment", "-t", name, "NO_AUTO_CLAUDE", "1"]);
+    const set = readNoAutoClaudeSet();
+    set.add(name);
+    writeNoAutoClaudeSet(set);
   } else {
     await tmux(["send-keys", "-t", `${name}:`, claudeLaunchCommand(name), "Enter"]);
   }
@@ -342,6 +376,11 @@ export async function deleteSession(name: string, deleteFolder = false): Promise
     delete births[name];
     saveBirths(births);
   }
+
+  // Drop the no-auto-claude opt-out marker if present; a new session with the
+  // same name should make its own launchClaude choice from scratch.
+  const noAuto = readNoAutoClaudeSet();
+  if (noAuto.delete(name)) writeNoAutoClaudeSet(noAuto);
 
   if (deleteFolder && cwd) {
     removeSessionFolder(cwd);

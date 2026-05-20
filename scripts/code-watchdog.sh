@@ -40,9 +40,16 @@ was_recently_deleted() {
     | grep -qE "\[audit\].*deleted session=$name(\s|$)"
 }
 
-# Did the user create this session with launchClaude=false? Marked via tmux env var.
+# Did the user create this session with launchClaude=false?
+# Persistent: the dashboard writes the name to ~/.local/state/code-dashboard/no-auto-claude.txt
+# Live (per-session): tmux env var NO_AUTO_CLAUDE=1 — dies on session recreate.
+# Either source counts. The file is the truth across reboots / watchdog recreates.
+NO_AUTO_CLAUDE_FILE="$HOME/.local/state/code-dashboard/no-auto-claude.txt"
 has_no_auto_claude() {
   local name="$1"
+  if [ -f "$NO_AUTO_CLAUDE_FILE" ] && grep -qxF "$name" "$NO_AUTO_CLAUDE_FILE"; then
+    return 0
+  fi
   tmux show-environment -t "=$name" NO_AUTO_CLAUDE 2>/dev/null | grep -q '^NO_AUTO_CLAUDE=1$'
 }
 
@@ -66,7 +73,10 @@ verify_remote_control() {
   # Check only the currently-visible footer for the positive signal.
   # The scrollback may contain stale "Remote Control failed" messages.
   local buf
-  buf=$(tmux capture-pane -t "$target" -p 2>/dev/null | tail -10)
+  # Scan the full pane: Claude's UI renders the RC footer high up with many
+  # blank lines below, so a small tail window misses it. Last 50 lines covers
+  # the visible area in every realistic pane height.
+  buf=$(tmux capture-pane -t "$target" -p 2>/dev/null | tail -50)
   if printf '%s' "$buf" | grep -q "Remote Control active"; then
     return 0
   fi
@@ -118,11 +128,17 @@ if [ -f "$STATE_FILE" ]; then
       log "B: hit MAX_RECREATE_PER_RUN=$MAX_RECREATE_PER_RUN, deferring $name to next tick"
       continue
     fi
-    log "B: recreating $name in $cwd"
-    tmux new-session -d -s "$name" -c "$cwd"
-    sleep 0.4
-    tmux send-keys -t "${name}:" "claude --remote-control --name '[${name}]' --continue" Enter
-    ( verify_remote_control "${name}:" & ) >/dev/null 2>&1
+    if has_no_auto_claude "$name"; then
+      log "B: recreating $name in $cwd (no-auto-claude → bash only)"
+      tmux new-session -d -s "$name" -c "$cwd"
+      tmux set-environment -t "$name" NO_AUTO_CLAUDE 1
+    else
+      log "B: recreating $name in $cwd"
+      tmux new-session -d -s "$name" -c "$cwd"
+      sleep 0.4
+      tmux send-keys -t "${name}:" "claude --remote-control --name '[${name}]' --continue" Enter
+      ( verify_remote_control "${name}:" & ) >/dev/null 2>&1
+    fi
     revived_recreated=$((revived_recreated+1))
   done < "$STATE_FILE"
 fi
@@ -144,7 +160,7 @@ for s in "${!CURRENT_CMD[@]}"; do
   for h in $HEALTHY_CMDS; do [[ "$cmd" == "$h" ]] && claude_running=1; done
   [ "$claude_running" = "1" ] || continue
   # Capture wider window (terminal width varies in tmux capture-pane default)
-  buf=$(tmux capture-pane -t "${s}:" -p 2>/dev/null | tail -10)
+  buf=$(tmux capture-pane -t "${s}:" -p 2>/dev/null | tail -50)
   if printf '%s' "$buf" | grep -q "Remote Control active"; then
     continue
   fi
